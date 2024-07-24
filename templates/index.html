@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="fa">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+
+    <title>مسیریابی عمومی</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+        integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet-src.min.js"
+        integrity="sha512-3/WyQrhTdqSVmSifQS62akgtNBhZha2lS44TnoN9Jk3J01FvsKK4suVmz6t5FtccGb5iJw58GoFhBjPE5EPc8Q=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <link rel="preconnect" href="//fdn.fontcdn.ir">
+    <link rel="preconnect" href="//v1.fontapi.ir">
+    <link href="https://v1.fontapi.ir/css/Shabnam" rel="stylesheet">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"
+        integrity="sha512-F6rjAEKNMtM0aODcc/MdnAvhGxn7FCbAkKJ5FKba/fnD3gnN+LBEok326WAMdOhKQKYNr+j/tJEuV1PKwIfhCA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js" integrity="sha512-+6Q7hv5pGUBXOuHWw8OdQx3ac7DzM3oJhYqz7SHDku0yl9EBdMqegoPed4GsHRoNF/VQYK2LTYewAIEBrEf/3w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+
+    <style>
+        body,
+        input,
+        button, 
+        .leaflet-popup-content-wrapper {
+            font-family: "Shabnam", "Tahoma" !important;
+            color: #fefefe !important;
+        } 
+
+        input,
+        button,
+        .leaflet-popup-content-wrapper,
+        .leaflet-popup-tip  {
+            background-color: #525252;
+            border: 3px solid #646464;
+        }
+
+        body {
+            height: 100vh;
+            width: 100vw;
+            margin: 0;
+            display: flex;
+            direction: rtl !important;
+        }
+
+        label {
+            text-align: right;
+        }
+
+        .option {
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            grid-gap: 5px;
+            align-items: center;
+        }
+
+        #sidebar {
+            width: 300px;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: #252525;
+        }
+
+        #map {
+            flex-grow: 1;
+            height: 100%;
+        }
+
+        input,
+        button {
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        #routes {
+            margin-top: 20px;
+        }
+
+        .destination-marker {
+            filter: grayscale(100%);
+        }
+
+        .map-tiles {
+            filter: grayscale(80%) invert(100%);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="sidebar">
+        <div class="option"><label> مختصات مبدا </label> <input required id="source" type="text" placeholder="مبدا"
+                value="35.700956, 51.391165">
+        </div>
+        <div class="option"><label> مختصات مقصد </label><input required id="destination" type="text" placeholder="مقصد"
+                value="35.710956, 51.401165">
+        </div>
+        <div class="option"><label> ساعت شروع سفر </label><input required id="time" type="time"
+                placeholder="ساعت شروع سفر"> </div>
+        <button id="start-routing">شروع به مسیریابی</button>
+        <div id="routes"></div>
+    </div>
+
+    <script type="text/javascript">
+        document.getElementById("time").value = (new Date()).toTimeString().substr(0, 5);
+
+        const map = L.map('map', {
+            maxBoundsViscosity: 1.0,
+        }).setView([35.700956, 51.391165], 15).setMaxBounds([
+            [36.050764, 50.557709],
+            [35.213649, 52.647858]
+        ]).setMaxZoom(17).setMinZoom(10);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            className: 'map-tiles'
+        }).addTo(map);
+
+        const sourceMarker = L.marker([35.700956, 51.391165], {
+            draggable: true,
+        }).addTo(map);
+
+        const destinationMarker = L.marker([35.710956, 51.401165], {
+            draggable: true,
+        }).addTo(map);
+        L.DomUtil.addClass(destinationMarker._icon, "destination-marker")
+
+        function onDragEnd(marker, inputId) {
+            const latlng = marker.getLatLng();
+            document.getElementById(inputId).value = `${latlng.lng.toFixed(6)}, ${latlng.lat.toFixed(6)}`;
+            clearUI();
+        }
+
+        sourceMarker.on('dragend', () => onDragEnd(sourceMarker, 'source'));
+        destinationMarker.on('dragend', () => onDragEnd(destinationMarker, 'destination'));
+
+        let routeLayers = [];
+        let popups = [];
+
+        function radians(degrees) {
+            return degrees * Math.PI / 180;
+        }
+
+        async function analyzeRoute(e) {
+            clearMap();
+
+            const route_id = e.target.getAttribute('route');
+
+            const date = new Date();
+            const time = document.getElementById("time").value;
+
+            const datetime = new Date(
+                date.getFullYear(),
+                date.getMonth(),
+                date.getDate(),
+                parseInt(time.split(":")[0]),
+                parseInt(time.split(":")[1])
+            );
+
+            let points = [];
+
+            for (const section of Array.from(routesData[route_id])) {
+                if (section['start'] === null) {
+                    continue;
+                }
+                const path = section['path']['list'][0]['path'];
+                const coords = path.map(p => [p['lat'], p['lng']]);
+                points.push({ color: section['path']['list'][0]['metadata']['strokeColor'], coords: coords });
+
+                if (section['section']['type'] == 'bus' || section['section']['type'] == 'BRT') {
+                    let count = 0;
+                    let right = 0;
+                    let left = 0;
+
+                    for (let i = 0, j = 1; i < path.length && j < path.length; i++, j++) {
+                        lat1 = radians(path[i]['lat'])
+                        lng1 = radians(path[i]['lng'])
+                        lat2 = radians(path[j]['lat'])
+                        lng2 = radians(path[j]['lng'])
+
+                        const sunPos = SunCalc.getPosition(datetime, path[i]['lat'], path[i]['lng']);
+
+                        azimuth = sunPos['azimuth']
+                        altitude = sunPos['altitude']
+
+                        if (altitude < 0) {
+                            continue
+                        }
+
+                        dlng = lng2 - lng1
+
+                        x = Math.cos(lat2) * Math.sin(dlng)
+                        y = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dlng)
+                        z = 0
+
+                        magnitude = Math.sqrt(x ** 2 + y ** 2)
+
+                        const vehicle_vector = [x / magnitude, y / magnitude, z];
+
+                        x = Math.cos(altitude) * Math.sin(azimuth)
+                        y = Math.cos(altitude) * Math.cos(azimuth)
+                        z = Math.sin(altitude)
+
+                        magnitude = Math.sqrt(x ** 2 + y ** 2 + z ** 2)
+
+                        const sun_vector = [x / magnitude, y / magnitude, z / magnitude];
+
+                        const cross_product = vehicle_vector[0] * sun_vector[1] - vehicle_vector[1] * sun_vector[0]
+
+                        if (cross_product > 0) {
+                            left += 1;
+                        } else if (cross_product < 0) {
+                            right += 1;
+                        }
+
+                        count += 1;
+                    }
+
+                    let content = '';
+
+                    if (count > 0) {
+                        right /= count;
+                        left /= count;
+
+                        content = `چپ: ${(left * 100).toFixed(2)}%<br>راست: ${(right * 100).toFixed(2)}%`;
+
+                        if (right - left > 0.2) {
+                            content += '<br>سمت چپ بنشینید.'
+                        } else if (left - right > 0.2) {
+                            content += '<br>سمت راست بنشینید.'
+                        } else {
+                            content += '<br>فرقی ندارد در کدام سمت بنشینید.'
+                        }
+                    } else {
+                        content = 'خورشید بالای افق نیست.<br>فرقی ندارد در کدام سمت بنشینید.';
+                    }
+
+                    popups.push(L.popup()
+                        .setLatLng(L.LineUtil.polylineCenter(coords, L.CRS.EPSG3857))
+                        .setContent(content)
+                        .addTo(map))
+                }
+
+            }
+
+            points.forEach(p => {
+                const polyline = L.polyline(p.coords, { color: p.color, weight: 8, dashArray: "4" }).addTo(map);
+                routeLayers.push(polyline);
+            });
+
+            const bounds = L.latLngBounds(points.flatMap(p => p.coords));
+            map.fitBounds(bounds);
+        }
+
+        function showRoutes(data) {
+            let content = '';
+            let ids = [];
+
+            data.forEach((route, i) => {
+                content += `<h4>مسیر شماره ${i + 1}</h4> <button route="${i}" id="route-${i}">بررسی مسیر</button>`;
+                content += '<ul>'
+                ids.push(`route-${i}`);
+
+                route.forEach((section, j) => {
+                    if (section['start'] === null) {
+                        return;
+                    }
+
+                    content += `<li>از `;
+                    if (typeof section['start'] == 'string' || section['start'] instanceof String) {
+                        content += section['start'];
+                    } else {
+                        content += `ایستگاه ${section['start']['unique_id']}`;
+                    }
+                    content += ` تا `;
+                    if (typeof section['end'] == 'string' || section['end'] instanceof String) {
+                        content += section['end'];
+                    } else {
+                        content += `ایستگاه ${section['end']['unique_id']}`;
+                    }
+                    if (section['section']['type'] == 'walk') {
+                        content += ` پیاده ${Math.round(section['section']['distance'] / 1000 * 100) / 100} کیلومتر طی کنید.`;
+                    } else if (section['section']['type'] == 'bus') {
+                        content += ` با اتوبوس ${section['line_name']} تعداد ${section['station_between']} ایستگاه را طی کنید.`;
+                    } else if (section['section']['type'] == 'metro') {
+                        content += ` با مترو ${section['lineAlias']} تعداد ${section['station_between']} ایستگاه را طی کنید.`;
+                    } else if (section['section']['type'] == 'BRT') {
+                        content += ` با BRT ${section['lineAlias']} تعداد ${section['station_between']} ایستگاه را طی کنید.`;
+                    }
+                    content += `</li>`;
+                });
+
+                content += '</ul>'
+            });
+
+            document.getElementById('routes').innerHTML = content;
+
+            ids.forEach((id) => {
+                document.getElementById(id).addEventListener("click", analyzeRoute);
+            });
+        }
+
+        function clearMap() {
+            routeLayers.forEach(layer => map.removeLayer(layer));
+            routeLayers = [];
+
+            popups.forEach(popup => map.closePopup(popup));
+            popups = [];
+        }
+
+        function clearUI() {
+            clearMap();
+            routesData = null;
+            document.getElementById('routes').innerHTML = '';
+        }
+
+        let routesData = null;
+
+        document.getElementById('start-routing').addEventListener('click', async () => {
+            clearUI();
+
+            const response = await fetch('http://127.0.0.1:5000/bus-routing?' + new URLSearchParams({
+                p1: sourceMarker.getLatLng().lat,
+                p2: sourceMarker.getLatLng().lng,
+                p3: destinationMarker.getLatLng().lat,
+                p4: destinationMarker.getLatLng().lng,
+            }).toString(), {
+                "method": "GET",
+            });
+
+            routesData = await response.json();
+
+            showRoutes(routesData);
+        });
+
+        // Adjust map size when window is resized
+        window.addEventListener('resize', function () {
+            map.invalidateSize();
+        });
+    </script>
+</body>
+
+</html>
