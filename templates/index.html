@@ -23,9 +23,6 @@
         integrity="sha512-F6rjAEKNMtM0aODcc/MdnAvhGxn7FCbAkKJ5FKba/fnD3gnN+LBEok326WAMdOhKQKYNr+j/tJEuV1PKwIfhCA=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js" integrity="sha512-+6Q7hv5pGUBXOuHWw8OdQx3ac7DzM3oJhYqz7SHDku0yl9EBdMqegoPed4GsHRoNF/VQYK2LTYewAIEBrEf/3w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-
-
     <style>
         body,
         input,
@@ -329,7 +326,7 @@
         document.getElementById('start-routing').addEventListener('click', async () => {
             clearUI();
 
-            const response = await fetch('http://127.0.0.1:5000/bus-routing?' + new URLSearchParams({
+            const response = await fetch('{{ url_for("bus_routing") }}?' + new URLSearchParams({
                 p1: sourceMarker.getLatLng().lat,
                 p2: sourceMarker.getLatLng().lng,
                 p3: destinationMarker.getLatLng().lat,
